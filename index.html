@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wumpus World — Ancient Dungeon</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --stone-deepest: #0e0c0a;
+  --stone-deep: #181410;
+  --stone-dark: #241e17;
+  --stone-mid: #2e2620;
+  --stone-light: #3d3228;
+  --stone-border: #4a3d2e;
+  --torch-gold: #e8a030;
+  --torch-amber: #c97820;
+  --torch-dim: #8a5510;
+  --torch-pale: #f5d090;
+  --blood-red: #8b1a1a;
+  --blood-bright: #c0392b;
+  --safe-green: #2d6a2d;
+  --safe-bright: #4caf50;
+  --mist-purple: #3d2b5a;
+  --mist-bright: #9b59b6;
+  --parchment: #c4a96d;
+  --parchment-dim: #7a6040;
+  --text-bright: #f0d9a0;
+  --text-mid: #a08050;
+  --text-dim: #5a4530;
+  --unknown-cell: #1a1510;
+  --visited-cell: #1f1a14;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--stone-deepest);
+  color: var(--text-bright);
+  font-family: 'Crimson Pro', Georgia, serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(232,160,48,0.06) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px);
+}
+
+/* Torch flicker animation */
+@keyframes flicker {
+  0%,100%{opacity:1} 8%{opacity:.9} 15%{opacity:1} 22%{opacity:.85} 30%{opacity:1} 45%{opacity:.95} 60%{opacity:1} 75%{opacity:.9} 88%{opacity:1}
+}
+@keyframes torchGlow {
+  0%,100%{box-shadow: 0 0 30px rgba(232,160,48,0.3), 0 0 60px rgba(232,160,48,0.1)}
+  50%{box-shadow: 0 0 50px rgba(232,160,48,0.5), 0 0 100px rgba(232,160,48,0.2)}
+}
+@keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cellReveal { from{transform:scale(0.85);opacity:0} to{transform:scale(1);opacity:1} }
+@keyframes agentBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+@keyframes goldSpin { 0%{transform:rotate(0deg) scale(1)} 50%{transform:rotate(180deg) scale(1.1)} 100%{transform:rotate(360deg) scale(1)} }
+@keyframes dangerPulse { 0%,100%{box-shadow:0 0 8px rgba(192,57,43,0.4)} 50%{box-shadow:0 0 20px rgba(192,57,43,0.8),inset 0 0 10px rgba(192,57,43,0.2)} }
+@keyframes safePulse { 0%,100%{box-shadow:0 0 6px rgba(76,175,80,0.3)} 50%{box-shadow:0 0 16px rgba(76,175,80,0.6)} }
+
+.app {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem;
+  animation: fadeUp 0.6s ease both;
+}
+
+/* ── HEADER ─────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--stone-border);
+  position: relative;
+}
+
+header::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--torch-dim), transparent);
+}
+
+.brand h1 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: var(--torch-gold);
+  text-shadow: 0 0 20px rgba(232,160,48,0.5);
+  animation: flicker 8s ease-in-out infinite;
+  line-height: 1;
+}
+
+.brand p {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.torch-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  background: var(--stone-dark);
+  border: 1px solid var(--stone-border);
+  border-radius: 4px;
+}
+
+.torch-icon {
+  font-size: 18px;
+  animation: flicker 3s ease-in-out infinite;
+}
+
+.torch-text {
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: var(--torch-amber);
+}
+
+/* ── LAYOUT ─────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 260px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* ── STONE PANELS ───────────────────────── */
+.stone-panel {
+  background: var(--stone-dark);
+  border: 1px solid var(--stone-border);
+  border-radius: 6px;
+  padding: 1.1rem;
+  position: relative;
+  animation: fadeUp 0.5s ease both;
+}
+
+.stone-panel + .stone-panel { margin-top: 1rem; }
+
+/* Corner runes */
+.stone-panel::before, .stone-panel::after {
+  content: '◆';
+  position: absolute;
+  font-size: 7px;
+  color: var(--torch-dim);
+  line-height: 1;
+}
+.stone-panel::before { top: 6px; left: 8px; }
+.stone-panel::after { bottom: 6px; right: 8px; }
+
+.rune-header {
+  font-family: 'Cinzel', serif;
+  font-size: 0.6rem;
+  letter-spacing: 0.25em;
+  color: var(--torch-amber);
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rune-header::before, .rune-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--stone-border));
+}
+.rune-header::before { background: linear-gradient(90deg, var(--stone-border), transparent); }
+
+/* ── CONFIG CONTROLS ────────────────────── */
+.cfg-row { margin-bottom: 1rem; }
+
+.cfg-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.cfg-label em {
+  font-style: normal;
+  color: var(--torch-gold);
+  font-weight: 700;
+}
+
+input[type=range] {
+  width: 100%;
+  -webkit-appearance: none;
+  height: 3px;
+  background: var(--stone-light);
+  border-radius: 2px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 2px;
+  background: var(--torch-gold);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(232,160,48,0.5);
+  transform: rotate(45deg);
+}
+
+/* ── BUTTONS ────────────────────────────── */
+.btn {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 4px;
+  border: 1px solid;
+  cursor: pointer;
+  font-family: 'Cinzel', serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  transition: all 0.2s;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn:last-child { margin-bottom: 0; }
+
+.btn-quest {
+  background: linear-gradient(180deg, #2a1f0a 0%, #1a1206 100%);
+  border-color: var(--torch-amber);
+  color: var(--torch-gold);
+  box-shadow: 0 0 15px rgba(232,160,48,0.2), inset 0 1px 0 rgba(232,160,48,0.15);
+}
+.btn-quest:hover {
+  background: linear-gradient(180deg, #3a2a0e 0%, #261a08 100%);
+  box-shadow: 0 0 25px rgba(232,160,48,0.4), inset 0 1px 0 rgba(232,160,48,0.2);
+  transform: translateY(-1px);
+}
+.btn-quest:active { transform: translateY(0); }
+
+.btn-stone {
+  background: var(--stone-mid);
+  border-color: var(--stone-border);
+  color: var(--text-mid);
+}
+.btn-stone:hover {
+  background: var(--stone-light);
+  border-color: var(--parchment-dim);
+  color: var(--text-bright);
+}
+
+.btn-blood {
+  background: rgba(139,26,26,0.3);
+  border-color: rgba(192,57,43,0.5);
+  color: #e57373;
+}
+.btn-blood:hover { background: rgba(139,26,26,0.5); }
+
+/* ── METRIC CARDS ───────────────────────── */
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 1rem;
+}
+
+.metric-card {
+  background: var(--stone-deepest);
+  border: 1px solid var(--stone-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.metric-val {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--torch-gold);
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(232,160,48,0.4);
+}
+
+.metric-lbl {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.52rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+}
+
+/* ── PERCEPT BADGES ─────────────────────── */
+.percept-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  margin-bottom: 1rem;
+}
+
+.percept-badge {
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.pb-breeze {
+  background: rgba(61,43,90,0.6);
+  border: 1px solid rgba(155,89,182,0.6);
+  color: #ce93d8;
+}
+.pb-stench {
+  background: rgba(139,26,26,0.4);
+  border: 1px solid rgba(192,57,43,0.6);
+  color: #ef9a9a;
+}
+.pb-glitter {
+  background: rgba(139,100,10,0.4);
+  border: 1px solid rgba(232,160,48,0.7);
+  color: var(--torch-pale);
+}
+.pb-none {
+  font-family: 'Crimson Pro', serif;
+  font-style: italic;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* ── LEGEND ─────────────────────────────── */
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-mid);
+  font-family: 'Crimson Pro', serif;
+}
+.legend-swatch {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* ── KB LOG ─────────────────────────────── */
+.scroll-log {
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--stone-border) transparent;
+}
+.log-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.56rem;
+  color: var(--text-dim);
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  line-height: 1.6;
+}
+.log-line.fresh { color: var(--torch-amber); }
+
+/* ── CELL INSPECTOR ─────────────────────── */
+#cell-info {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  line-height: 1.8;
+}
+
+/* ── GRID AREA ──────────────────────────── */
+.arena-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.arena {
+  background: var(--stone-deepest);
+  border: 1px solid var(--stone-border);
+  border-radius: 8px;
+  padding: 2rem;
+  width: 100%;
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow:
+    inset 0 0 60px rgba(0,0,0,0.8),
+    0 0 30px rgba(232,160,48,0.08);
+  animation: torchGlow 4s ease-in-out infinite;
+}
+
+/* Torch corners */
+.arena::before, .arena::after {
+  content: '🔥';
+  position: absolute;
+  font-size: 20px;
+  animation: flicker 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(232,160,48,0.8));
+}
+.arena::before { top: 12px; left: 16px; }
+.arena::after { top: 12px; right: 16px; animation-delay: 1.5s; }
+
+#dungeon-grid {
+  display: grid;
+  gap: 5px;
+}
+
+/* ── CELLS ──────────────────────────────── */
+.cell {
+  width: 70px;
+  height: 70px;
+  border-radius: 5px;
+  border: 1px solid var(--stone-border);
+  background: var(--unknown-cell);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.3s;
+  animation: cellReveal 0.3s ease both;
+  overflow: hidden;
+}
+
+/* Stone texture on unknown cells */
+.cell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 6px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 6px);
+  pointer-events: none;
+}
+
+.cell:hover { transform: scale(1.06); border-color: var(--torch-dim); z-index: 2; }
+
+.cell-coords {
+  position: absolute;
+  bottom: 3px; right: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.45rem;
+  color: rgba(255,255,255,0.15);
+  line-height: 1;
+}
+
+.cell-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  display: block;
+}
+
+/* Cell states */
+.cell-visited {
+  background: var(--visited-cell);
+  border-color: rgba(74,61,46,0.8);
+}
+
+.cell-safe {
+  background: rgba(45,106,45,0.2);
+  border-color: rgba(76,175,80,0.5);
+  animation: cellReveal 0.3s ease both, safePulse 3s ease-in-out infinite;
+}
+
+.cell-agent {
+  background: rgba(201,120,32,0.2);
+  border-color: var(--torch-amber);
+  box-shadow: 0 0 20px rgba(232,160,48,0.4), inset 0 0 15px rgba(232,160,48,0.1);
+  animation: cellReveal 0.3s ease both, torchGlow 2s ease-in-out infinite;
+}
+
+.cell-agent .cell-icon {
+  animation: agentBob 1.5s ease-in-out infinite;
+}
+
+.cell-danger {
+  background: rgba(139,26,26,0.25);
+  border-color: rgba(192,57,43,0.7);
+  animation: cellReveal 0.3s ease both, dangerPulse 2s ease-in-out infinite;
+}
+
+.cell-gold {
+  background: rgba(139,100,10,0.25);
+  border-color: rgba(232,160,48,0.7);
+}
+.cell-gold .cell-icon { animation: goldSpin 3s linear infinite; }
+
+.cell-pit-reveal {
+  background: rgba(0,0,0,0.9);
+  border-color: var(--blood-bright);
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+}
+
+.cell-wumpus-reveal {
+  background: rgba(139,26,26,0.5);
+  border-color: var(--blood-bright);
+  box-shadow: 0 0 15px rgba(192,57,43,0.5);
+}
+
+/* ── CONTROLS ───────────────────────────── */
+.controls-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.dpad {
+  display: grid;
+  grid-template-areas: ". n ." "w . e" ". s .";
+  gap: 5px;
+}
+
+.dpad-btn {
+  width: 52px; height: 52px;
+  background: var(--stone-dark);
+  border: 1px solid var(--stone-border);
+  border-radius: 5px;
+  color: var(--torch-amber);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-family: 'Cinzel', serif;
+}
+.dpad-btn:hover {
+  background: var(--stone-mid);
+  border-color: var(--torch-dim);
+  color: var(--torch-gold);
+  box-shadow: 0 0 10px rgba(232,160,48,0.2);
+}
+.dpad-btn:active {
+  transform: scale(0.92);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+[data-d=n]{grid-area:n} [data-d=w]{grid-area:w} [data-d=e]{grid-area:e} [data-d=s]{grid-area:s}
+
+.action-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 8px 18px;
+  border-radius: 4px;
+  border: 1px solid var(--stone-border);
+  background: var(--stone-dark);
+  color: var(--text-mid);
+  font-family: 'Cinzel', serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.action-btn:hover {
+  background: var(--stone-mid);
+  border-color: var(--parchment-dim);
+  color: var(--torch-amber);
+}
+#auto-btn.running {
+  border-color: var(--blood-bright);
+  color: #ef9a9a;
+  background: rgba(139,26,26,0.2);
+}
+
+/* ── GAME OVER OVERLAY ──────────────────── */
+.overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(14,12,10,0.95);
+  z-index: 20;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.overlay.show { display: flex; }
+
+.overlay-title {
+  font-family: 'Cinzel', serif;
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.overlay-title.win { color: var(--torch-gold); text-shadow: 0 0 30px rgba(232,160,48,0.8); }
+.overlay-title.lose { color: var(--blood-bright); text-shadow: 0 0 30px rgba(192,57,43,0.6); }
+
+.overlay-flavor {
+  font-family: 'Crimson Pro', serif;
+  font-style: italic;
+  font-size: 1rem;
+  color: var(--text-mid);
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.overlay-stats {
+  display: flex;
+  gap: 20px;
+}
+
+.o-stat {
+  text-align: center;
+  font-family: 'Cinzel', serif;
+}
+.o-stat .n { font-size: 1.4rem; color: var(--torch-amber); }
+.o-stat .l { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; margin-top: 2px; }
+
+/* ── RESPONSIVE ─────────────────────────── */
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 240px 1fr; }
+  .layout > :last-child { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .layout > :last-child .stone-panel + .stone-panel { margin-top: 0; }
+}
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; }
+  .cell { width: 52px; height: 52px; }
+  .layout > :last-child { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="brand">
+    <h1>⚔ WUMPUS WORLD</h1>
+    <p>Propositional Logic · Resolution Refutation Engine · Knowledge-Based Agent</p>
+  </div>
+  <div class="header-right">
+    <div class="torch-status">
+      <span class="torch-icon">🔥</span>
+      <span class="torch-text" id="status-text">AWAITING QUEST</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT PANEL -->
+  <div>
+    <div class="stone-panel">
+      <div class="rune-header">Quest Parameters</div>
+
+      <div class="cfg-row">
+        <div class="cfg-label">Dungeon Rows <em id="rv">4</em></div>
+        <input type="range" id="rslider" min="2" max="8" value="4" step="1"
+          oninput="document.getElementById('rv').textContent=this.value">
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">Dungeon Cols <em id="cv">4</em></div>
+        <input type="range" id="cslider" min="2" max="8" value="4" step="1"
+          oninput="document.getElementById('cv').textContent=this.value">
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">Pit Traps <em id="pv">3</em></div>
+        <input type="range" id="pslider" min="1" max="8" value="3" step="1"
+          oninput="document.getElementById('pv').textContent=this.value">
+      </div>
+
+      <button class="btn btn-quest" onclick="newGame()">⚔ BEGIN QUEST</button>
+      <button class="btn btn-stone" onclick="resetGame()">↺ Abandon Quest</button>
+    </div>
+
+    <div class="stone-panel">
+      <div class="rune-header">Map Legend</div>
+      <div class="legend-grid">
+        <div class="legend-item"><div class="legend-swatch" style="background:#1a1510"></div>Unknown</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#1f1a14;border-color:#4a3d2e"></div>Visited</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(45,106,45,0.3);border-color:rgba(76,175,80,0.5)"></div>KB Safe</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(139,26,26,0.3);border-color:rgba(192,57,43,0.6)"></div>Danger</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(201,120,32,0.2);border-color:#c97820"></div>Hero 🧙</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(139,100,10,0.3);border-color:rgba(232,160,48,0.7)"></div>Gold 💎</div>
+      </div>
+    </div>
+
+    <div class="stone-panel">
+      <div class="rune-header">Quest Chronicle</div>
+      <div class="scroll-log" id="event-log">
+        <div class="log-line">Awaiting the hero's first step...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: ARENA -->
+  <div class="arena-wrap">
+    <div class="arena">
+      <div id="dungeon-grid">
+        <div style="font-family:'Crimson Pro',serif;font-style:italic;color:var(--text-dim);font-size:1rem;text-align:center;padding:2rem">
+          The dungeon lies in darkness.<br>Begin your quest to reveal its secrets.
+        </div>
+      </div>
+      <div class="overlay" id="game-overlay">
+        <div class="overlay-title" id="ov-title"></div>
+        <div class="overlay-flavor" id="ov-flavor"></div>
+        <div class="overlay-stats" id="ov-stats"></div>
+        <button class="btn btn-quest" style="width:200px;margin-top:8px" onclick="newGame()">⚔ Quest Again</button>
+      </div>
+    </div>
+
+    <div class="controls-zone">
+      <div class="dpad">
+        <button class="dpad-btn" data-d="n" onclick="move('up')">▲</button>
+        <button class="dpad-btn" data-d="w" onclick="move('left')">◀</button>
+        <button class="dpad-btn" data-d="e" onclick="move('right')">▶</button>
+        <button class="dpad-btn" data-d="s" onclick="move('down')">▼</button>
+      </div>
+      <div class="action-bar">
+        <button class="action-btn" onclick="autoMove()">🧠 Think Once</button>
+        <button class="action-btn" id="auto-btn" onclick="toggleAuto()">⚡ Auto Quest</button>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:var(--text-dim);text-align:center;letter-spacing:0.1em">
+        ARROW KEYS · A = AUTO STEP · N = NEW QUEST
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div>
+    <div class="stone-panel">
+      <div class="rune-header">Oracle Metrics</div>
+      <div class="metric-row">
+        <div class="metric-card">
+          <div class="metric-val" id="m-inf">0</div>
+          <div class="metric-lbl">Inferences</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="m-kb">0</div>
+          <div class="metric-lbl">KB Clauses</div>
+        </div>
+        <div class="metric-card">
+
+          <div class="metric-val" id="m-mv">0</div>
+          <div class="metric-lbl">Steps Taken</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="m-sf">0</div>
+          <div class="metric-lbl">Safe Cells</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stone-panel">
+      <div class="rune-header">Active Percepts</div>
+      <div class="percept-row" id="percept-row">
+        <span class="pb-none">No active quest</span>
+      </div>
+      <div style="font-family:'Crimson Pro',serif;font-style:italic;font-size:0.72rem;color:var(--text-dim);line-height:1.8">
+        Breeze whispers of pit traps near<br>
+        Stench heralds the Wumpus's lair<br>
+        Glitter reveals the ancient gold
+      </div>
+    </div>
+
+    <div class="stone-panel">
+      <div class="rune-header">Knowledge Base</div>
+      <div class="scroll-log" id="kb-log">
+        <div class="log-line">The oracle awaits percepts...</div>
+      </div>
+    </div>
+
+    <div class="stone-panel">
+      <div class="rune-header">Cell Oracle</div>
+      <div style="font-family:'Crimson Pro',serif;font-style:italic;font-size:0.72rem;color:var(--text-dim);margin-bottom:8px">
+        Click any cell to consult the KB
+      </div>
+      <div id="cell-info">—</div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const API = '/api';
+let S = null, autoTimer = null, isAuto = false;
+
+async function newGame() {
+  stopAuto();
+  const rows = +document.getElementById('rslider').value;
+  const cols = +document.getElementById('cslider').value;
+  const pits = +document.getElementById('pslider').value;
+  try {
+    const r = await fetch(`${API}/new_game`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({rows,cols,pits})
+    });
+    S = await r.json();
+    document.getElementById('game-overlay').classList.remove('show');
+    render();
+    setStatus('QUEST ACTIVE');
+  } catch(e) {
+    alert('Cannot reach Flask backend!\nMake sure python app.py is running on port 5000.');
+  }
+}
+
+async function move(dir) {
+  if (!S || S.game_over) return;
+  const r = await fetch(`${API}/move`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({direction:dir})
+  });
+  S = await r.json();
+  render();
+}
+
+async function autoMove() {
+  if (!S || S.game_over) return;
+  const r = await fetch(`${API}/auto_move`, {method:'POST'});
+  S = await r.json();
+  render();
+}
+
+function toggleAuto() {
+  if (isAuto) { stopAuto(); return; }
+  isAuto = true;
+  const btn = document.getElementById('auto-btn');
+  btn.textContent = '⏸ Stop Quest';
+  btn.classList.add('running');
+  autoTimer = setInterval(async () => {
+    if (!S || S.game_over) { stopAuto(); return; }
+    await autoMove();
+  }, 650);
+}
+
+function stopAuto() {
+  isAuto = false;
+  clearInterval(autoTimer);
+  const btn = document.getElementById('auto-btn');
+  btn.textContent = '⚡ Auto Quest';
+  btn.classList.remove('running');
+}
+
+function resetGame() {
+  stopAuto(); S = null;
+  document.getElementById('dungeon-grid').innerHTML =
+    `<div style="font-family:'Crimson Pro',serif;font-style:italic;color:var(--text-dim);font-size:1rem;text-align:center;padding:2rem">The dungeon lies in darkness.<br>Begin your quest to reveal its secrets.</div>`;
+  document.getElementById('percept-row').innerHTML = '<span class="pb-none">No active quest</span>';
+  document.getElementById('kb-log').innerHTML = '<div class="log-line">The oracle awaits percepts...</div>';
+  document.getElementById('event-log').innerHTML = '<div class="log-line">Quest abandoned.</div>';
+  document.getElementById('game-overlay').classList.remove('show');
+  document.getElementById('cell-info').textContent = '—';
+  ['m-inf','m-kb','m-mv','m-sf'].forEach(id => document.getElementById(id).textContent='0');
+  setStatus('AWAITING QUEST');
+}
+
+function render() {
+  if (!S) return;
+  renderGrid();
+  renderMetrics();
+  renderPercepts();
+  renderKB();
+  renderLog();
+  if (S.game_over) showOverlay();
+}
+
+function renderGrid() {
+  const g = document.getElementById('dungeon-grid');
+  const {rows,cols,agent,visited,safe_cells,confirmed_danger,gold,pits,wumpus,game_over,has_gold} = S;
+  g.style.gridTemplateColumns = `repeat(${cols},70px)`;
+  g.innerHTML = '';
+
+  for (let r=0;r<rows;r++) {
+    for (let c=0;c<cols;c++) {
+      const el = document.createElement('div');
+      el.className = 'cell';
+      el.style.animationDelay = `${(r*cols+c)*0.03}s`;
+
+      const isAgent = agent[0]===r && agent[1]===c;
+      const isVis = visited.some(v=>v[0]===r&&v[1]===c);
+      const isSafe = safe_cells.some(s=>s[0]===r&&s[1]===c);
+      const isDang = confirmed_danger.some(d=>d[0]===r&&d[1]===c);
+      const isGold = gold[0]===r && gold[1]===c && !has_gold && isVis;
+      const isPit = game_over && pits.some(p=>p[0]===r&&p[1]===c);
+      const isWump = game_over && wumpus && wumpus[0]===r && wumpus[1]===c;
+
+      let icon = '';
+
+      if (isAgent) {
+        el.classList.add('cell-agent');
+        icon = '🧙';
+      } else if (isPit) {
+        el.classList.add('cell-pit-reveal');
+        icon = '🕳';
+      } else if (isWump) {
+        el.classList.add('cell-wumpus-reveal');
+        icon = '👹';
+      } else if (isGold) {
+        el.classList.add('cell-gold');
+        icon = '💎';
+      } else if (isDang) {
+        el.classList.add('cell-danger');
+        icon = '☠';
+      } else if (isSafe && !isVis) {
+        el.classList.add('cell-safe');
+        icon = '✦';
+      } else if (isVis) {
+        el.classList.add('cell-visited');
+        icon = '';
+      }
+
+      el.innerHTML = `<span class="cell-icon">${icon}</span><span class="cell-coords">${r},${c}</span>`;
+      el.addEventListener('click', ()=>inspectCell(r,c));
+      g.appendChild(el);
+    }
+  }
+}
+
+async function inspectCell(r,c) {
+  if (!S) return;
+  const res = await fetch(`${API}/ask_cell`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({r,c})
+  });
+  const d = await res.json();
+  document.getElementById('m-inf').textContent = d.inference_steps;
+  document.getElementById('cell-info').innerHTML = `
+    <div style="color:var(--torch-pale);margin-bottom:6px;font-family:'Cinzel',serif;font-size:0.65rem">Cell (${r}, ${c})</div>
+    <div style="color:${d.safe?'var(--safe-bright)':'var(--text-dim)'}">
+      ${d.safe ? '✦ Oracle: SAFE to enter' : '✗ Oracle: Cannot prove safe'}
+    </div>
+    <div style="color:${d.dangerous?'var(--blood-bright)':'var(--text-dim)'}">
+      ${d.dangerous ? '☠ Oracle: DANGER confirmed' : '— No proven danger'}
+    </div>
+    <div style="margin-top:6px;color:var(--text-dim)">Inferences: ${d.inference_steps}</div>
+  `;
+}
+
+function renderMetrics() {
+  document.getElementById('m-inf').textContent = S.inference_steps;
+  document.getElementById('m-kb').textContent = S.kb_size;
+  document.getElementById('m-mv').textContent = S.move_count;
+  document.getElementById('m-sf').textContent = S.safe_cells.length;
+}
+
+function renderPercepts() {
+  const row = document.getElementById('percept-row');
+  if (!S.percepts || S.percepts.length===0) {
+    row.innerHTML = '<span class="pb-none">Silence... the path seems clear</span>';
+    return;
+  }
+  const map = {Breeze:'pb-breeze 💨 Breeze',Stench:'pb-stench 🦨 Stench',Glitter:'pb-glitter ✨ Glitter'};
+  row.innerHTML = S.percepts.map(p=>{
+    const parts = (map[p]||'pb-none '+p).split(' ');
+    const cls = parts[0];
+    const label = parts.slice(1).join(' ');
+    return `<span class="percept-badge ${cls}">${label}</span>`;
+  }).join('');
+}
+
+function renderKB() {
+  const log = document.getElementById('kb-log');
+  if (!S.kb_facts || !S.kb_facts.length) return;
+  log.innerHTML = S.kb_facts.map((f,i)=>
+    `<div class="log-line${i===S.kb_facts.length-1?' fresh':''}">${f}</div>`
+  ).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderLog() {
+  const log = document.getElementById('event-log');
+  if (!S.log || !S.log.length) return;
+  log.innerHTML = S.log.map((l,i)=>
+    `<div class="log-line${i===S.log.length-1?' fresh':''}">${l}</div>`
+  ).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function showOverlay() {
+  stopAuto();
+  const ov = document.getElementById('game-overlay');
+  const title = document.getElementById('ov-title');
+  const flavor = document.getElementById('ov-flavor');
+  const stats = document.getElementById('ov-stats');
+  ov.classList.add('show');
+
+  const statHTML = `
+    <div class="o-stat"><div class="n">${S.move_count}</div><div class="l">STEPS</div></div>
+    <div class="o-stat"><div class="n">${S.inference_steps}</div><div class="l">INFERENCES</div></div>
+    <div class="o-stat"><div class="n">${S.safe_cells.length}</div><div class="l">SAFE CELLS</div></div>
+  `;
+  stats.innerHTML = statHTML;
+
+  if (S.win) {
+    title.textContent = '⚔ VICTORY';
+    title.className = 'overlay-title win';
+    flavor.textContent = 'The hero emerges from the dungeon, gold in hand. Songs shall be sung of this triumph.';
+    setStatus('QUEST COMPLETE');
+  } else if (S.died==='pit') {
+    title.textContent = '🕳 FALLEN';
+    title.className = 'overlay-title lose';
+    flavor.textContent = 'The darkness claimed another soul. The pit offered no mercy.';
+    setStatus('HERO FALLEN');
+  } else {
+    title.textContent = '👹 DEVOURED';
+    title.className = 'overlay-title lose';
+    flavor.textContent = 'The Wumpus feasts tonight. The dungeon grows quiet once more.';
+    setStatus('HERO FALLEN');
+  }
+}
+
+function setStatus(t) { document.getElementById('status-text').textContent = t; }
+
+document.addEventListener('keydown', e=>{
+  const m = {ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+  if (m[e.key]) { e.preventDefault(); move(m[e.key]); }
+  if (e.key==='a'||e.key==='A') autoMove();
+  if (e.key==='n'||e.key==='N') newGame();
+});
+</script>
+</body>
+</html>
